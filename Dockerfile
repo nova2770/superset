@@ -221,6 +221,9 @@ EXPOSE ${SUPERSET_PORT}
 ######################################################################
 FROM python-common AS lean
 
+# Copy superset_config.py to PYTHONPATH for environment variable support
+COPY docker/pythonpath_dev/superset_config.py ${PYTHONPATH}/
+
 # Install Python dependencies using docker/pip-install.sh
 COPY requirements/base.txt requirements/
 
