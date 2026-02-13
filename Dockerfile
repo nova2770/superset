@@ -242,7 +242,7 @@ RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
     uv pip install -e .
 # Install database drivers used by production metadata backends
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install .[postgres,mysql]
+    /app/docker/pip-install.sh --requires-build-essential .[postgres,mysql]
 RUN python -m compileall /app/superset
 
 USER superset
