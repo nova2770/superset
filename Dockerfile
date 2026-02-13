@@ -224,6 +224,11 @@ FROM python-common AS lean
 # Copy superset_config.py to PYTHONPATH for environment variable support
 COPY docker/pythonpath_dev/superset_config.py ${PYTHONPATH}/
 
+# Debian libs needed for MySQL driver builds when wheel is unavailable
+RUN /app/docker/apt-install.sh \
+    pkg-config \
+    default-libmysqlclient-dev
+
 # Install Python dependencies using docker/pip-install.sh
 COPY requirements/base.txt requirements/
 
@@ -235,9 +240,9 @@ RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
 # Install the superset package
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
     uv pip install -e .
-# Install PostgreSQL driver (psycopg2) for production use with PostgreSQL backends
+# Install database drivers used by production metadata backends
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install .[postgres]
+    uv pip install .[postgres,mysql]
 RUN python -m compileall /app/superset
 
 USER superset
