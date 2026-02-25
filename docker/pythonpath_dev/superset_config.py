@@ -23,9 +23,12 @@
 import logging
 import os
 import sys
+from copy import deepcopy
 
 from celery.schedules import crontab
 from flask_caching.backends.filesystemcache import FileSystemCache
+from superset.config import TALISMAN_CONFIG as TALISMAN_DEFAULT_CONFIG
+from superset.config import TALISMAN_DEV_CONFIG as TALISMAN_DEV_DEFAULT_CONFIG
 
 logger = logging.getLogger()
 
@@ -80,6 +83,33 @@ DATA_CACHE_CONFIG = CACHE_CONFIG
 THUMBNAIL_CACHE_CONFIG = CACHE_CONFIG
 
 
+def _parse_boolean(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+def _parse_origin_list(env_key: str) -> list[str]:
+    raw_value = os.getenv(env_key, "")
+    return [
+        origin.strip().rstrip("/")
+        for origin in raw_value.split(",")
+        if origin.strip()
+    ]
+
+
+def _configure_talisman_for_embedding(
+    base_config: dict[str, object],
+    frame_ancestors: list[str],
+) -> dict[str, object]:
+    config = deepcopy(base_config)
+    config["frame_options"] = None
+    content_security_policy = config.get("content_security_policy")
+    if isinstance(content_security_policy, dict):
+        content_security_policy["frame-ancestors"] = ["'self'", *frame_ancestors]
+    return config
+
+
 class CeleryConfig:
     broker_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_CELERY_DB}"
     imports = (
@@ -106,6 +136,23 @@ class CeleryConfig:
 CELERY_CONFIG = CeleryConfig
 
 FEATURE_FLAGS = {"ALERT_REPORTS": True, "DATASET_FOLDERS": True}
+if "SUPERSET_FEATURE_EMBEDDED_SUPERSET" in os.environ:
+    FEATURE_FLAGS["EMBEDDED_SUPERSET"] = _parse_boolean(
+        os.getenv("SUPERSET_FEATURE_EMBEDDED_SUPERSET"),
+    )
+
+embed_frame_ancestors = _parse_origin_list("SUPERSET_EMBED_FRAME_ANCESTORS")
+if embed_frame_ancestors:
+    TALISMAN_ENABLED = _parse_boolean(os.getenv("TALISMAN_ENABLED"), default=True)
+    TALISMAN_CONFIG = _configure_talisman_for_embedding(
+        TALISMAN_DEFAULT_CONFIG,
+        embed_frame_ancestors,
+    )
+    TALISMAN_DEV_CONFIG = _configure_talisman_for_embedding(
+        TALISMAN_DEV_DEFAULT_CONFIG,
+        embed_frame_ancestors,
+    )
+
 ALERT_REPORTS_NOTIFICATION_DRY_RUN = True
 WEBDRIVER_BASEURL = f"http://superset_app{os.environ.get('SUPERSET_APP_ROOT', '/')}/"  # When using docker compose baseurl should be http://superset_nginx{ENV{BASEPATH}}/  # noqa: E501
 # The base URL for the email report hyperlinks.
