@@ -1,0 +1,112 @@
+name: Build & Push Superset to ECR (WLR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "选择部署环境"
+        required: true
+        type: choice
+        default: test
+        options:
+          - test
+          - prod
+      platform:
+        description: "选择目标架构"
+        required: true
+        type: choice
+        default: amd64
+        options:
+          - amd64
+          - arm64
+      build_target:
+        description: "选择构建目标"
+        required: true
+        type: choice
+        default: lean
+        options:
+          - lean
+          - dev
+
+env:
+  IMAGE_NAME: superset
+  AWS_REGION: mx-central-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID_WLR }}.dkr.ecr.mx-central-1.amazonaws.com
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_WLR }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_WLR }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image tags
+        id: tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE=$(date +%Y%m%d)
+          ENV=${{ inputs.environment }}
+
+          REPO_URI="${{ env.ECR_REGISTRY }}/nova/superset"
+          echo "latest=${REPO_URI}:${ENV}-latest" >> $GITHUB_OUTPUT
+          echo "date_sha=${REPO_URI}:${ENV}-${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+          echo "Generated tags:"
+          echo "  - ${REPO_URI}:${ENV}-latest"
+          echo "  - ${REPO_URI}:${ENV}-${DATE}-${SHORT_SHA}"
+
+      - name: Build and Push Docker image
+        run: |
+          echo "🐳 构建 Superset Docker 镜像..."
+          PLATFORM="linux/${{ inputs.platform }}"
+          TARGET="${{ inputs.build_target }}"
+
+          echo "目标架构: $PLATFORM"
+          echo "构建目标: $TARGET"
+
+          docker buildx build \
+            --platform "$PLATFORM" \
+            --target "$TARGET" \
+            -t ${{ steps.tags.outputs.latest }} \
+            -t ${{ steps.tags.outputs.date_sha }} \
+            --push \
+            .
+
+          echo "✅ 镜像推送完成"
+
+      - name: Build summary
+        run: |
+          echo "## ✅ Superset 构建并推送完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform**: ${{ inputs.platform }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Target**: ${{ inputs.build_target }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: $(git rev-parse --short HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 推送的镜像" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.tags.outputs.latest }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.tags.outputs.date_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 ECR 控制台" >> $GITHUB_STEP_SUMMARY
+          echo "[查看 ECR 仓库](https://mx-central-1.console.aws.amazon.com/ecr/private-registry/repositories?region=mx-central-1)" >> $GITHUB_STEP_SUMMARY

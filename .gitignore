@@ -38,6 +38,8 @@ cover
 .python-version
 .tox
 .vscode
+.zcode/
+.migration/
 _build
 _images
 _modules
